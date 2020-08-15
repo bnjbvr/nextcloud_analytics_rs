@@ -6,14 +6,14 @@ use reqwest as http;
 
 static URL_PREFIX: &'static str = "apps/analytics/api/1.0/adddata/{COLLECTION_ID}";
 
-pub struct Client {
-    client: http::Client,
+pub struct SyncClient {
+    client: http::blocking::Client,
     url: String,
     user: String,
     passwd: String,
 }
 
-impl Client {
+impl SyncClient {
     pub fn new<S: Into<String>>(nextcloud_url: &str, collection: u32, user: S, passwd: S) -> Self {
         let mut url = nextcloud_url.to_string();
 
@@ -31,7 +31,7 @@ impl Client {
             http::header::HeaderValue::from_static("application/json"),
         );
 
-        let client = http::Client::builder()
+        let client = http::blocking::Client::builder()
             .default_headers(headers)
             .build()
             .unwrap();
@@ -44,7 +44,7 @@ impl Client {
         }
     }
 
-    pub async fn send_data<S: Into<String>, F: Into<f64>>(
+    pub fn send_data<S: Into<String>, F: Into<f64>>(
         &self,
         dimension1: S,
         dimension2: S,
@@ -66,18 +66,18 @@ impl Client {
             .post(&self.url)
             .basic_auth(self.user.clone(), Some(self.passwd.clone()));
 
-        let resp = req.body(data).send().await?;
+        let resp = req.body(data).send()?;
 
         if resp.status() != http::StatusCode::OK {
             let status = resp.status();
-            let message = resp.text().await?;
+            let message = resp.text()?;
             return Err(Box::new(ApiError(format!(
                 "unexpected status code: {:?}\n{}",
                 status, message
             ))));
         }
 
-        let json_resp = json::parse(&resp.text().await?)?;
+        let json_resp = json::parse(&resp.text()?)?;
         if !json_resp["success"]
             .as_bool()
             .expect("There should be a success field in the API response")
@@ -93,22 +93,21 @@ impl Client {
         Ok(())
     }
 
-    pub async fn send_timeline_data<S: Into<String>, F: Into<f64>>(
+    pub fn send_timeline_data<S: Into<String>, F: Into<f64>>(
         &self,
         key: S,
         time: DateTime<Utc>,
         value: F,
     ) -> Result<(), Box<dyn Error>> {
         self.send_data(key.into(), time.to_rfc2822(), value.into())
-            .await
     }
 
-    pub async fn send_timeline_now_data<S: Into<String>, F: Into<f64>>(
+    pub fn send_timeline_now_data<S: Into<String>, F: Into<f64>>(
         &self,
         key: S,
         value: F,
     ) -> Result<(), Box<dyn Error>> {
-        self.send_timeline_data(key, Utc::now(), value).await
+        self.send_timeline_data(key, Utc::now(), value)
     }
 }
 
